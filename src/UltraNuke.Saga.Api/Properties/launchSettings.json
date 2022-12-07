@@ -9,7 +9,7 @@
     }
   },
   "profiles": {
-    "UltraNuke.TaleSpin": {
+    "UltraNuke.Saga": {
       "commandName": "Project",
       "dotnetRunMessages": true,
       "launchBrowser": true,

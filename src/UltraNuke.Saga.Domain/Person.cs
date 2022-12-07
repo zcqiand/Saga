@@ -1,6 +1,8 @@
-﻿using ZCITC.Demo.Domain.AggregatesModel;
+﻿using UltraNuke.Saga.Domain.Actors;
+using UltraNuke.Saga.Domain.Places;
+using UltraNuke.Saga.Domain.Props;
 
-namespace UltraNuke.Saga.Domain.Actor;
+namespace UltraNuke.Saga.Domain;
 
 public class Person : Thing
 {
@@ -10,23 +12,27 @@ public class Person : Thing
     public int health = 0;  //-1已经死了，但是我们会在初始化时恢复它们
     public bool is_dead = false;
     public int inebriation = 0;
-    public IList<string> path = new List<string>();//该人当前正在走的地方的路径
-    public Queue<(string, object, object[])> queue = new Queue<(string, object, object[])>();//下一个要调用的函数队列
+    public IList<string> path;//该人当前正在走的地方的路径
+    public Queue<(string, object, object[])> queue;//下一个要调用的函数队列
     public Thing right_hand;
     public Thing left_hand;
     public Thing body;
     public IList<Thing> parts = new List<Thing>();
     public bool escaped;//最终的比赛状态
 
-
-    public Person(string name, Stage stage) : base(name, stage)
+    /// <summary>
+    /// 有手和位置并会表现出行为的人
+    /// </summary>
+    /// <param name="stage"></param>
+    /// <param name="name"></param>
+    public Person(Stage stage, string name) : base(stage, name)
     {
         health = Tool.DEFAULT_HEALTH;
-        //self.path = []  # A path of Places the person is currently walking
-        //self.queue = []  # A queue of functions to call next
-        right_hand = new Thing($"{name}的右手", stage);
-        left_hand = new Thing($"{name}的左手", stage);
-        body = new Thing($"{name}的身体", stage);
+        path = new List<string>();
+        queue = new Queue<(string, object, object[])>();
+        right_hand = new Thing(stage, $"{name}的右手");
+        left_hand = new Thing(stage, $"{name}的左手");
+        body = new Thing(stage, $"{name}的身体");
         parts.Add(left_hand);
         parts.Add(right_hand);
         parts.Add(body);
@@ -39,6 +45,33 @@ public class Person : Thing
         get
         {
             return health > 0;
+        }
+    }
+
+    /// <summary>
+    /// 将物体放在某个地方或支撑物体上。 如果演员没有对象，则为空。
+    /// </summary>
+    /// <param name=""></param>
+    /// <param name=""></param>
+    public void drop(Thing obj, Thing target)
+    {
+        if (get_if_held(obj.name) != null && target != null)
+        {
+            Tool.print($"把{obj.name}放在{target.name}上");
+            obj.move_to(target);
+        }
+    }
+
+    /// <summary>
+    /// 设置起始位置会更改世界模型，并打印一条明确的消息。 这是幂等的，因此可以安全地循环调用，因为我很懒
+    /// </summary>
+    /// <param name=""></param>
+    public void set_starting_location(Thing location)
+    {
+        if (location != null && this.location == null)
+        {
+            this.location = location;
+            Tool.print($"({name}在{location.name}。)");
         }
     }
 
@@ -60,16 +93,19 @@ public class Person : Thing
         }
 
         var actor_initiative = RandomUtil.Next(0, Tool.DEFAULT_INITIATIVE);
+
         if (path.Count > 0)  //演员真的很想去某个地方
         {
             actor_initiative += Tool.HIGH_INITIATIVE;
             Tool.debug($"{name} init change for path movement: {Tool.HIGH_INITIATIVE},{actor_initiative}");
         }
 
+        //如果他们受伤了，他们会很生气
         var injury_bonus = Tool.DEFAULT_HEALTH - health;
         actor_initiative += injury_bonus;
         Tool.debug($"{name} init change for injury bonus: {injury_bonus},{actor_initiative}");
 
+        //如果他们几乎没有子弹，他们也会更加兴奋
         var gun = (Gun)get_if_held(typeof(Gun));
         if (gun != null)
         {
@@ -88,7 +124,7 @@ public class Person : Thing
     {
         if (health <= 0)
         {
-            Console.WriteLine($"{name}死了。");
+            Tool.print($"{name}死了。");
             var obj = get_held_obj(right_hand);
             if (obj != null)
             {
@@ -142,7 +178,7 @@ public class Person : Thing
             }
 
             Tool.debug("*** Trying to get the money");
-            var money = stage.find("钱");
+            var money = stage.Find("钱");
             if (location == money.location)
             {
                 return take(money);
@@ -188,11 +224,11 @@ public class Person : Thing
                 //如果我们没有枪，那就去找吧！
                 if (this is Sheriff)
                 {
-                    gun = (Gun)stage.find("警枪");
+                    gun = (Gun)stage.Find("警枪");
                 }
                 else
                 {
-                    gun = (Gun)stage.find("枪");
+                    gun = (Gun)stage.Find("枪");
                 }
 
                 if (get_if_held(gun.name) != null)
@@ -214,7 +250,7 @@ public class Person : Thing
         }
         else if (choice == "drink")
         {
-            var glass = (Container)stage.find("酒杯");
+            var glass = (Container)stage.Find("酒杯");
             if (get_if_held("酒杯") != null)
             {
                 if (glass.full)
@@ -224,7 +260,7 @@ public class Person : Thing
                 }
                 else
                 {
-                    var bottle = (Container)stage.find("酒瓶");
+                    var bottle = (Container)stage.Find("酒瓶");
                     if (get_if_held("酒瓶") != null)
                     {
                         bottle.pour(glass);
@@ -269,7 +305,7 @@ public class Person : Thing
         }
         else if (choice == "count")
         {
-            if (can_reach_obj(stage.find("钱")))
+            if (can_reach_obj(stage.Find("钱")))
             {
                 Tool.print("数钱");
                 return true;
@@ -277,7 +313,7 @@ public class Person : Thing
         }
         else if (choice == "lean")
         {
-            if (location == stage.find("窗口"))
+            if (location == stage.Find("窗口"))
             {
                 Tool.print("靠在窗户上看");
                 return true;
@@ -501,7 +537,7 @@ public class Person : Thing
 
     public Thing get_if_held(string obj_name)
     {
-        var obj = stage.find(obj_name);
+        var obj = stage.Find(obj_name);
         if (obj != null)
         {
             if (obj.location != null)
@@ -541,32 +577,5 @@ public class Person : Thing
             return left_hand;
         }
         return null;
-    }
-
-    /// <summary>
-    /// 设置起始位置会更改世界模型，并打印一条明确的消息。 这是幂等的，因此可以安全地循环调用，因为我很懒
-    /// </summary>
-    /// <param name=""></param>
-    public void set_starting_location(Thing location)
-    {
-        if (location != null && this.location == null)
-        {
-            this.location = location;
-            Tool.print($"({name}在{location.name}。)");
-        }
-    }
-
-    /// <summary>
-    /// 将物体放在某个地方或支撑物体上。 如果演员没有对象，则为空。
-    /// </summary>
-    /// <param name=""></param>
-    /// <param name=""></param>
-    public void drop(Thing obj, Thing target)
-    {
-        if (get_if_held(obj.name) != null && target != null)
-        {
-            Tool.print($"把{obj.name}放在{target.name}上");
-            obj.move_to(target);
-        }
     }
 }
